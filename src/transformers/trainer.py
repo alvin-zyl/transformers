@@ -251,6 +251,8 @@ if is_accelerate_available():
 if is_accelerate_available("0.28.0"):
     from accelerate.utils import DataLoaderConfiguration
 
+from torch.optim import AdamW
+
 
 def _is_peft_model(model):
     if is_peft_available():
@@ -1278,7 +1280,13 @@ class Trainer:
             "betas": (args.adam_beta1, args.adam_beta2),
             "eps": args.adam_epsilon,
         }
-        if args.optim == OptimizerNames.ADAFACTOR:
+        if args.optim == OptimizerNames.LAMB:
+            from bitsandbytes.optim import LAMB
+            optimizer_cls = LAMB
+        elif args.optim == OptimizerNames.NV_LAMB:
+            from lamb_amp_opt.fused_lamb import FusedLAMBAMP
+            optimizer_cls = FusedLAMBAMP
+        elif args.optim == OptimizerNames.ADAFACTOR:
             optimizer_cls = Adafactor
             optimizer_kwargs.update({"scale_parameter": False, "relative_step": False})
         elif args.optim == OptimizerNames.ADAMW_HF:

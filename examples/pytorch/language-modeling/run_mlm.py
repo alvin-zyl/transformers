@@ -58,6 +58,7 @@ from tensor_transformers.nv_bert import (
     TensorBertForMaskedLM,
     MoETensorBertConfig,
     MoETensorBertForMaskedLM,
+    GCPTensorBertForMaskedLM,
 )
 
 
@@ -77,11 +78,20 @@ MODEL_CLASSES = {
         TensorBertConfig,
         TensorBertForMaskedLM,
     ),
+    "nv_tensor_bert_gcp": (TensorBertConfig, GCPTensorBertForMaskedLM),
     "nv_tensor_bert_moe": (
         MoETensorBertConfig,
         MoETensorBertForMaskedLM,
     ),
 }
+
+
+@dataclass
+class ExtraTrainingArgument:
+    tensor_lr: float = field(
+        default=None, metadata={"help": "Different learning rate for tensor params?"}
+    )
+    tensor_no_decay: bool = field(default=False)
 
 
 @dataclass
@@ -315,16 +325,23 @@ def main():
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
     parser = HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, TrainingArguments)
+        (
+            ModelArguments,
+            DataTrainingArguments,
+            TrainingArguments,
+            ExtraTrainingArgument,
+        )
     )
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
-        model_args, data_args, training_args = parser.parse_json_file(
-            json_file=os.path.abspath(sys.argv[1])
+        model_args, data_args, training_args, extra_training_args = (
+            parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
         )
     else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+        model_args, data_args, training_args, extra_training_args = (
+            parser.parse_args_into_dataclasses()
+        )
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
@@ -485,11 +502,16 @@ def main():
                 model.load_state_dict(checkpoint, strict=False)
 
         elif model_args.config_name:
-            logger.warning("You are instantiating a new config instance from scratch.")
             config = config_class.from_json_file(model_args.config_name)
             if config.vocab_size % 8 != 0:
                 config.vocab_size += 8 - (config.vocab_size % 8)
             model = model_class(config)
+            n_params = sum(
+                {p.data_ptr(): p.numel() for p in model.parameters()}.values()
+            )
+            logger.info(
+                f"Training new model from scratch - Total size={n_params/2**20:.2f}M params"
+            )
 
     else:
         if model_args.config_name:
@@ -524,9 +546,14 @@ def main():
                 low_cpu_mem_usage=model_args.low_cpu_mem_usage,
             )
         else:
-            logger.info("Training new model from scratch")
             model = AutoModelForMaskedLM.from_config(
                 config, trust_remote_code=model_args.trust_remote_code
+            )
+            n_params = sum(
+                {p.data_ptr(): p.numel() for p in model.parameters()}.values()
+            )
+            logger.info(
+                f"Training new model from scratch - Total size={n_params/2**20:.2f}M params"
             )
 
     tokenizer_kwargs = {
@@ -737,6 +764,45 @@ def main():
     )
 
     # Initialize our Trainer
+    if extra_training_args.tensor_lr is not None or extra_training_args.tensor_no_decay:
+        param_optimizer = list(model.named_parameters())
+        no_decay = ["bias", "gamma", "beta", "LayerNorm"]
+        tensor_param = ["tensor"]
+
+        optimizer_grouped_parameters = [
+            {
+                "params": [
+                    p
+                    for n, p in param_optimizer
+                    if not any(nd in n for nd in no_decay + tensor_param)
+                ],
+                "weight_decay": 0.01,
+                "lr": training_args.learning_rate,
+            },
+            {
+                "params": [
+                    p for n, p in param_optimizer if any(nd in n for nd in tensor_param)
+                ],
+                "weight_decay": (
+                    0.01 if not extra_training_args.tensor_no_decay else 0.0
+                ),
+                "lr": extra_training_args.tensor_lr,
+            },
+            {
+                "params": [
+                    p for n, p in param_optimizer if any(nd in n for nd in no_decay)
+                ],
+                "weight_decay": 0.0,
+                "lr": training_args.learning_rate,
+            },
+        ]
+        optimizer_cls, scheduler_cls = Trainer.get_optimizer_cls_and_kwargs(
+            training_args, model
+        )
+        optimizer = optimizer_cls(optimizer_grouped_parameters)
+    else:
+        optimizer = None
+
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -754,6 +820,7 @@ def main():
             if training_args.do_eval and not is_torch_xla_available()
             else None
         ),
+        optimizers=(optimizer, None),
     )
 
     # Training
@@ -767,12 +834,13 @@ def main():
         trainer.save_model()  # Saves the tokenizer too for easy upload
         metrics = train_result.metrics
 
-        max_train_samples = (
-            data_args.max_train_samples
-            if data_args.max_train_samples is not None
-            else len(train_dataset)
-        )
-        metrics["train_samples"] = min(max_train_samples, len(train_dataset))
+        if not data_args.streaming:
+            max_train_samples = (
+                data_args.max_train_samples
+                if data_args.max_train_samples is not None
+                else len(train_dataset)
+            )
+            metrics["train_samples"] = min(max_train_samples, len(train_dataset))
 
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
@@ -784,12 +852,14 @@ def main():
 
         metrics = trainer.evaluate()
 
-        max_eval_samples = (
-            data_args.max_eval_samples
-            if data_args.max_eval_samples is not None
-            else len(eval_dataset)
-        )
-        metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
+        if not data_args.streaming:
+            max_eval_samples = (
+                data_args.max_eval_samples
+                if data_args.max_eval_samples is not None
+                else len(eval_dataset)
+            )
+            metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
+
         try:
             perplexity = math.exp(metrics["eval_loss"])
         except OverflowError:

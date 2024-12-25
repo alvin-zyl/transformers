@@ -1,14 +1,14 @@
 DEVICE=${DEVICE-"0"}
-MODEL_TYPE=${MODEL_TYPE-"nv_tensor_bert_moe"}
+MODEL_TYPE=${MODEL_TYPE-"hf_tensor_gpt2"}
 
-if [ "${MODEL_TYPE}" == "bert" ]; then
+if [ "${MODEL_TYPE}" == "gpt2" ]; then
     readonly model_flag="--model_type=$MODEL_TYPE"
     readonly config_flag=""
     RUN_NAME=$MODEL_TYPE
 else
-    CONFIG_NAME=${CONFIG_NAME-"base-tensor-moe-16-4-false-128"}
+    CONFIG_NAME=${CONFIG_NAME-"gpt2-tensor"}
     readonly model_flag="--model_type=$MODEL_TYPE --tensor_backend"
-    readonly config_flag="--config_name=/workspace/transformers/nv_bert_config/$CONFIG_NAME.json"
+    readonly config_flag="--config_name=/workspace/transformers/hf_gpt2_configs/$CONFIG_NAME.json"
     RUN_NAME=$CONFIG_NAME
 fi
 
@@ -28,10 +28,10 @@ fi
 
 readonly data_flag="--dataset_name=$DATA --dataset_config_name=$DATA_CONFIG $data_streaming_flag"
 
-LR=${LR-"5e-4"}
+LR=${LR-"2e-4"}
 RUN_NAME=$RUN_NAME-LR-$LR
 
-if [ "${MODEL_TYPE}" != "bert" ]; then
+if [ "${MODEL_TYPE}" != "gpt2" ]; then
     TL=${TL-"none"}
     if [ "${TL}" == "none" ]; then
         readonly tensor_lr_flag=""
@@ -68,8 +68,8 @@ else
     readonly p_flag=""
 fi
 
-BZ=${BZ-"256"}
-GRAD_ACC=${GRAD_ACC-"2"}
+BZ=${BZ-"32"}
+GRAD_ACC=${GRAD_ACC-"4"}
 
 OVERWRITE=${OVERWRITE-"False"}
 if [ "${OVERWRITE}" == "True" ]; then
@@ -77,8 +77,7 @@ if [ "${OVERWRITE}" == "True" ]; then
 else
     readonly overwrite_flag=""
 fi
-MAX_STEP=${MAX_STEP-"33000"}
-SEQ_LEN=${SEQ_LEN-"128"}
+MAX_STEP=${MAX_STEP-"18000"}
 
 OPTIM=${OPTIM-"none"}
 if [ "${OPTIM}" != "none" ]; then
@@ -87,13 +86,14 @@ else
     readonly optim_flag=""
 fi
 
-WANDB_PROJECT=hf_pretrain CUDA_VISIBLE_DEVICES=$DEVICE nohup /bin/python3 run_mlm.py \
+WANDB_PROJECT=hf_pretrain CUDA_VISIBLE_DEVICES=$DEVICE nohup /bin/python3 run_clm.py \
     $model_flag $config_flag $data_flag $optim_flag\
-    --tokenizer_name=bert-base-uncased \
-    --per_device_train_batch_size=$BZ --per_device_eval_batch_size=$BZ --gradient_accumulation_steps=$GRAD_ACC --do_train --do_eval $p_flag \
+    --tokenizer_name=gpt2 \
+    --per_device_train_batch_size=$BZ --per_device_eval_batch_size=$BZ --gradient_accumulation_steps=$GRAD_ACC \
+    --do_train --do_eval $p_flag \
     --eval_strategy=steps --eval_steps=10000 --save_strategy=steps --save_steps=10000 --max_steps=$MAX_STEP \
     --logging_steps=10 --include_num_input_tokens_seen \
-    --warmup_ratio=0.2 --weight_decay=0.01 --max_seq_length=$SEQ_LEN\
+    --warmup_ratio=0.2 --weight_decay=0.01 \
     --learning_rate=$LR $tensor_lr_flag $TND_flag $MGN_flag \
     --output_dir=/results/hf_pretrain/$RUN_NAME --save_safetensors=False $overwrite_flag \
     > /results/hf_pretrain/$RUN_NAME.out 2>&1 &
