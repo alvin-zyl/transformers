@@ -6,7 +6,7 @@ PORT=$(($RANDOM + 10000))
 TENSOR_MODEL_TYPE=("hf_tensor_gpt2", "hf_tensor_llama")
 MODEL_TYPE=${MODEL_TYPE-"hf_tensor_gpt2"}
 
-if grep -q "$MODEL_TYPE" <<< "${TENSOR_MODEL_TYPE[@]}"; then
+if [[ $(echo ${TENSOR_MODEL_TYPE[@]} | fgrep -w $MODEL_TYPE) ]]; then
     CONFIG_NAME=${CONFIG_NAME-"gpt2-tensor"}
     readonly model_flag="--model_type=$MODEL_TYPE --tensor_backend --config_name=/workspace/transformers/${MODEL_TYPE}_configs/$CONFIG_NAME.json"
     TOKENIZER=${TOKENIZER-"gpt2"}
@@ -107,13 +107,20 @@ if [ "${SEQ}" != "1024" ]; then
     RUN_NAME="$RUN_NAME-Seq-$SEQ"
 fi
 
+MIN_LR=${MIN_LR-"0.1"}
+if [ "${MIN_LR}" == "none" ]; then
+    readonly scheduler_flag="--lr_scheduler_type=cosine"
+else
+    readonly scheduler_flag='--lr_scheduler_type=cosine_with_min_lr --lr_scheduler_kwargs={"min_lr_rate":0.1}'
+fi
+
 WANDB_PROJECT=hf_pretrain CUDA_VISIBLE_DEVICES=$DEVICE torchrun --nproc-per-node=$NGPU --master-port=$PORT run_clm.py \
     $model_flag $data_flag $optim_flag $block_size_flag $tokenizer_flag \
     --per_device_train_batch_size=$BZ --per_device_eval_batch_size=$BZ --gradient_accumulation_steps=$GRAD_ACC \
     --do_train --do_eval $p_flag \
     --eval_strategy=steps --eval_steps=3000 --save_strategy=steps --save_steps=3000 --max_steps=$MAX_STEP \
     --logging_steps=10 --include_num_input_tokens_seen \
-    --warmup_ratio=0.2 --weight_decay=0.01 \
+    --warmup_ratio=0.1 $scheduler_flag --weight_decay=0.01 \
     --learning_rate=$LR $tensor_lr_flag $TND_flag $MGN_flag \
     --output_dir=/results/hf_pretrain/$RUN_NAME --save_safetensors=False $overwrite_flag \
     > /results/hf_pretrain/$RUN_NAME.out 2>&1 &
