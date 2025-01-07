@@ -3,18 +3,29 @@ IFS=',' read -ra array <<< "$DEVICE"
 NGPU="${#array[@]}"
 PORT=$(($RANDOM + 10000))
 
+TENSOR_MODEL_TYPE=("hf_tensor_gpt2", "hf_tensor_llama")
 MODEL_TYPE=${MODEL_TYPE-"hf_tensor_gpt2"}
 
-if [ "${MODEL_TYPE}" == "gpt2" ]; then
-    readonly model_flag="--model_type=$MODEL_TYPE"
-    readonly config_flag=""
-    RUN_NAME=$MODEL_TYPE
-else
+if grep -q "$MODEL_TYPE" <<< "${TENSOR_MODEL_TYPE[@]}"; then
     CONFIG_NAME=${CONFIG_NAME-"gpt2-tensor"}
-    readonly model_flag="--model_type=$MODEL_TYPE --tensor_backend"
-    readonly config_flag="--config_name=/workspace/transformers/hf_gpt2_configs/$CONFIG_NAME.json"
-    RUN_NAME=$CONFIG_NAME
+    readonly model_flag="--model_type=$MODEL_TYPE --tensor_backend --config_name=/workspace/transformers/${MODEL_TYPE}_configs/$CONFIG_NAME.json"
+    TOKENIZER=${TOKENIZER-"gpt2"}
+    RUN_NAME=$CONFIG_NAME-$TOKENIZER-tokenizer
+else
+    CONFIG_NAME=${CONFIG_NAME-"none"}
+    if [ "${CONFIG_NAME}" == "none" ]; then
+        readonly model_flag="--model_type=$MODEL_TYPE"
+        RUN_NAME=$MODEL_TYPE
+    else
+        readonly model_flag="--config_name=/workspace/transformers/${MODEL_TYPE}_configs/$CONFIG_NAME.json"
+        RUN_NAME=$CONFIG_NAME
+    fi
+    TOKENIZER=${TOKENIZER-"$MODEL_TYPE"}
+    if [ "${TOKENIZER}" != "$MODEL_TYPE" ]; then
+        RUN_NAME=$RUN_NAME-$TOKENIZER-tokenizer
+    fi
 fi
+readonly tokenizer_flag="--tokenizer_name=$TOKENIZER"
 
 TAG=${TAG-"none"}
 if [ "${TAG}" != "none" ]; then
@@ -90,9 +101,14 @@ else
     readonly optim_flag=""
 fi
 
+SEQ=${SEQ-"1024"}
+readonly block_size_flag="--block_size=$SEQ"
+if [ "${SEQ}" != "1024" ]; then
+    RUN_NAME="$RUN_NAME-Seq-$SEQ"
+fi
+
 WANDB_PROJECT=hf_pretrain CUDA_VISIBLE_DEVICES=$DEVICE torchrun --nproc-per-node=$NGPU --master-port=$PORT run_clm.py \
-    $model_flag $config_flag $data_flag $optim_flag\
-    --tokenizer_name=gpt2 \
+    $model_flag $data_flag $optim_flag $block_size_flag $tokenizer_flag \
     --per_device_train_batch_size=$BZ --per_device_eval_batch_size=$BZ --gradient_accumulation_steps=$GRAD_ACC \
     --do_train --do_eval $p_flag \
     --eval_strategy=steps --eval_steps=3000 --save_strategy=steps --save_steps=3000 --max_steps=$MAX_STEP \
