@@ -1496,6 +1496,14 @@ class TrainingArguments:
         },
     )
 
+    ignore_padding_tokens: Optional[bool] = field(
+        default=False,
+    )
+
+    pad_token_id: Optional[int] = field(
+        default=None,
+    )
+
     neftune_noise_alpha: Optional[float] = field(
         default=None,
         metadata={

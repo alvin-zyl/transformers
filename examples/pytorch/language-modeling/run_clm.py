@@ -267,6 +267,7 @@ class DataTrainingArguments:
         default=True,
         metadata={"help": "Whether to keep line breaks when using TXT files or not."},
     )
+    no_grouping: bool = field(default=False)
 
     def __post_init__(self):
         if self.streaming:
@@ -578,9 +579,36 @@ def main():
         "transformers.tokenization_utils_base"
     )
 
+    if hasattr(config, "max_position_embeddings"):
+        max_pos_embeddings = config.max_position_embeddings
+    else:
+        # Define a default value if the attribute is missing in the config.
+        max_pos_embeddings = 1024
+
+    if data_args.block_size is None:
+        block_size = min(1024, max_pos_embeddings)
+    else:
+        if data_args.block_size > tokenizer.model_max_length:
+            logger.warning(
+                f"The block_size passed ({data_args.block_size}) is larger than the maximum length for the model "
+                f"({tokenizer.model_max_length}). Using block_size={tokenizer.model_max_length}."
+            )
+        block_size = min(data_args.block_size, tokenizer.model_max_length)
+
     def tokenize_function(examples):
         with CaptureLogger(tok_logger) as cl:
-            output = tokenizer(examples[text_column_name])
+            if data_args.no_grouping:
+                output = tokenizer(
+                    examples[text_column_name],
+                    truncation=True,
+                    max_length=block_size,
+                    padding="max_length",
+                    return_tensors="pt",
+                )
+                output["labels"] = output["input_ids"].clone()
+                output["labels"][output["labels"] == tokenizer.pad_token_id] = -100
+            else:
+                output = tokenizer(examples[text_column_name])
         # clm input could be much much longer than block_size
         if "Token indices sequence length is longer than the" in cl.out:
             tok_logger.warning(
@@ -605,30 +633,6 @@ def main():
                 batched=True,
                 remove_columns=column_names,
             )
-    if hasattr(config, "max_position_embeddings"):
-        max_pos_embeddings = config.max_position_embeddings
-    else:
-        # Define a default value if the attribute is missing in the config.
-        max_pos_embeddings = 1024
-
-    if data_args.block_size is None:
-        block_size = tokenizer.model_max_length
-        if block_size > max_pos_embeddings:
-            logger.warning(
-                f"The tokenizer picked seems to have a very large `model_max_length` ({tokenizer.model_max_length}). "
-                f"Using block_size={min(1024, max_pos_embeddings)} instead. You can change that default value by passing --block_size xxx."
-            )
-            if max_pos_embeddings > 0:
-                block_size = min(1024, max_pos_embeddings)
-            else:
-                block_size = 1024
-    else:
-        if data_args.block_size > tokenizer.model_max_length:
-            logger.warning(
-                f"The block_size passed ({data_args.block_size}) is larger than the maximum length for the model "
-                f"({tokenizer.model_max_length}). Using block_size={tokenizer.model_max_length}."
-            )
-        block_size = min(data_args.block_size, tokenizer.model_max_length)
 
     # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
     def group_texts(examples):
@@ -653,20 +657,24 @@ def main():
     # To speed up this part, we use multiprocessing. See the documentation of the map method for more information:
     # https://huggingface.co/docs/datasets/process#map
 
-    with training_args.main_process_first(desc="grouping texts together"):
-        if not data_args.streaming:
-            lm_datasets = tokenized_datasets.map(
-                group_texts,
-                batched=True,
-                num_proc=data_args.preprocessing_num_workers,
-                load_from_cache_file=not data_args.overwrite_cache,
-                desc=f"Grouping texts in chunks of {block_size}",
-            )
-        else:
-            lm_datasets = tokenized_datasets.map(
-                group_texts,
-                batched=True,
-            )
+    if data_args.no_grouping:
+        lm_datasets = tokenized_datasets
+        training_args.pad_token_id = tokenizer.pad_token_id
+    else:
+        with training_args.main_process_first(desc="grouping texts together"):
+            if not data_args.streaming:
+                lm_datasets = tokenized_datasets.map(
+                    group_texts,
+                    batched=True,
+                    num_proc=data_args.preprocessing_num_workers,
+                    load_from_cache_file=not data_args.overwrite_cache,
+                    desc=f"Grouping texts in chunks of {block_size}",
+                )
+            else:
+                lm_datasets = tokenized_datasets.map(
+                    group_texts,
+                    batched=True,
+                )
 
     if training_args.do_train:
         if "train" not in tokenized_datasets:

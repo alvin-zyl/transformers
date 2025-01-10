@@ -27,6 +27,26 @@ else
 fi
 readonly tokenizer_flag="--tokenizer_name=$TOKENIZER"
 
+CONTINUE=${CONTINUE-"none"}
+if [ "${CONTINUE}" != "none" ]; then
+    readonly checkpoint_flag="--model_name_or_path=$CONTINUE"
+else
+    readonly checkpoint_flag=""
+fi
+
+TRAIN=${TRAIN-"True"}
+if [ "${TRAIN}" == "True" ]; then
+    readonly train_flag="--do_train"
+else
+    readonly train_flag=""
+fi
+EVAL=${EVAL-$TRAIN}
+if [ "${EVAL}" == "True" ]; then
+    readonly eval_flag="--do_eval"
+else
+    readonly eval_flag=""
+fi
+
 TAG=${TAG-"none"}
 if [ "${TAG}" != "none" ]; then
     RUN_NAME=$TAG-$RUN_NAME
@@ -114,13 +134,30 @@ else
     readonly scheduler_flag='--lr_scheduler_type=cosine_with_min_lr --lr_scheduler_kwargs={"min_lr_rate":0.1}'
 fi
 
+NO_GROUP=${NO_GROUP-"False"}
+if [ "${NO_GROUP}" == "True" ]; then
+    readonly no_grouping_flag="--no_grouping --ignore_padding_tokens"
+    RUN_NAME=$RUN_NAME-NO-GROUP
+else
+    readonly no_grouping_flag=""
+fi
+
+EVAL_STEPS=${EVAL_STEPS="9000"}
+SAVE_STEPS=${SAVE_STEPS-$EVAL_STEPS}
+
+if [ "${CONTINUE}" != "none" ]; then
+    LOG_NAME=$RUN_NAME-${CONTINUE##*/}
+else
+    LOG_NAME=$RUN_NAME
+fi
+
 WANDB_PROJECT=hf_pretrain CUDA_VISIBLE_DEVICES=$DEVICE torchrun --nproc-per-node=$NGPU --master-port=$PORT run_clm.py \
-    $model_flag $data_flag $optim_flag $block_size_flag $tokenizer_flag \
+    $model_flag $checkpoint_flag $data_flag $optim_flag $block_size_flag $tokenizer_flag \
     --per_device_train_batch_size=$BZ --per_device_eval_batch_size=$BZ --gradient_accumulation_steps=$GRAD_ACC \
-    --do_train --do_eval $p_flag \
-    --eval_strategy=steps --eval_steps=3000 --save_strategy=steps --save_steps=3000 --max_steps=$MAX_STEP \
+    $train_flag $eval_flag $p_flag \
+    --eval_strategy=steps --eval_steps=$EVAL_STEPS --save_strategy=steps --save_steps=$SAVE_STEPS --max_steps=$MAX_STEP \
     --logging_steps=10 --include_num_input_tokens_seen \
     --warmup_ratio=0.1 $scheduler_flag --weight_decay=0.01 \
     --learning_rate=$LR $tensor_lr_flag $TND_flag $MGN_flag \
-    --output_dir=/results/hf_pretrain/$RUN_NAME --save_safetensors=False $overwrite_flag \
-    > /results/hf_pretrain/$RUN_NAME.out 2>&1 &
+    --output_dir=/results/hf_pretrain/$RUN_NAME --save_safetensors=False $overwrite_flag $no_grouping_flag \
+    > /results/hf_pretrain/$LOG_NAME.out 2>&1 &

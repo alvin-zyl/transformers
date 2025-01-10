@@ -2471,9 +2471,12 @@ class Trainer:
                                 "a `main_input_name` attribute to the model class you are using."
                             )
                         else:
-                            input_tokens = inputs[main_input_name].numel()
-                            input_tokens = torch.tensor(input_tokens, device=self.args.device, dtype=torch.int64)
-                            self.state.num_input_tokens_seen += self.accelerator.gather(input_tokens).sum().cpu().item()
+                            input_tokens = inputs[main_input_name]
+                            if args.ignore_padding_tokens:
+                                input_tokens = input_tokens[input_tokens != args.pad_token_id]
+                            num_input_tokens = input_tokens.numel()
+                            num_input_tokens = torch.tensor(num_input_tokens, device=self.args.device, dtype=torch.int64)
+                            self.state.num_input_tokens_seen += self.accelerator.gather(num_input_tokens).sum().cpu().item()
                     if rng_to_sync:
                         self._load_rng_state(resume_from_checkpoint)
                         rng_to_sync = False
