@@ -79,7 +79,7 @@ MODEL_CLASSES = {
     "hf_tensor_llama": (
         TensorLlamaConfig,
         TensorLlamaForCausalLM,
-    )
+    ),
 }
 
 
@@ -273,6 +273,7 @@ class DataTrainingArguments:
         metadata={"help": "Whether to keep line breaks when using TXT files or not."},
     )
     no_grouping: bool = field(default=False)
+    offline_mode: bool = field(default=False)
 
     def __post_init__(self):
         if self.streaming:
@@ -393,33 +394,41 @@ def main():
     # download the dataset.
     if data_args.dataset_name is not None:
         # Downloading and loading a dataset from the hub.
-        raw_datasets = load_dataset(
-            data_args.dataset_name,
-            data_args.dataset_config_name,
-            cache_dir=model_args.cache_dir,
-            token=model_args.token,
-            streaming=data_args.streaming,
-            trust_remote_code=model_args.trust_remote_code,
-        )
-        if "validation" not in raw_datasets.keys():
-            raw_datasets["validation"] = load_dataset(
+        if data_args.offline_mode:
+            raw_datasets = load_dataset(
+                data_args.dataset_name,
+                streaming=data_args.streaming,
+            )
+            assert "validation" in raw_datasets.keys()
+            assert "train" in raw_datasets.keys()
+        else:
+            raw_datasets = load_dataset(
                 data_args.dataset_name,
                 data_args.dataset_config_name,
-                split=f"train[:{data_args.validation_split_percentage}%]",
                 cache_dir=model_args.cache_dir,
                 token=model_args.token,
                 streaming=data_args.streaming,
                 trust_remote_code=model_args.trust_remote_code,
             )
-            raw_datasets["train"] = load_dataset(
-                data_args.dataset_name,
-                data_args.dataset_config_name,
-                split=f"train[{data_args.validation_split_percentage}%:]",
-                cache_dir=model_args.cache_dir,
-                token=model_args.token,
-                streaming=data_args.streaming,
-                trust_remote_code=model_args.trust_remote_code,
-            )
+            if "validation" not in raw_datasets.keys():
+                raw_datasets["validation"] = load_dataset(
+                    data_args.dataset_name,
+                    data_args.dataset_config_name,
+                    split=f"train[:{data_args.validation_split_percentage}%]",
+                    cache_dir=model_args.cache_dir,
+                    token=model_args.token,
+                    streaming=data_args.streaming,
+                    trust_remote_code=model_args.trust_remote_code,
+                )
+                raw_datasets["train"] = load_dataset(
+                    data_args.dataset_name,
+                    data_args.dataset_config_name,
+                    split=f"train[{data_args.validation_split_percentage}%:]",
+                    cache_dir=model_args.cache_dir,
+                    token=model_args.token,
+                    streaming=data_args.streaming,
+                    trust_remote_code=model_args.trust_remote_code,
+                )
     else:
         data_files = {}
         dataset_args = {}
