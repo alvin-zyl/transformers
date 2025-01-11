@@ -52,7 +52,7 @@ if [ "${TAG}" != "none" ]; then
     RUN_NAME=$TAG-$RUN_NAME
 fi
 
-HF_HOME="/datasets/.cache/huggingface"
+HF_HOME=${HF_HOME-"/datasets/.cache/huggingface"}
 DATA=${DATA-"$HF_HOME/datasets/c4/raw"}
 readonly data_flag="--dataset_name=$DATA --streaming --offline_mode"
 
@@ -143,6 +143,8 @@ else
     LOG_NAME=$RUN_NAME
 fi
 
+RESULTS_DIR=${RESULTS_DIR-"/results/hf_pretrain"}
+
 WANDB_PROJECT=hf_pretrain HF_HUB_OFFLINE=1 HF_HOME=$HF_HOME CUDA_VISIBLE_DEVICES=$DEVICE torchrun --nproc-per-node=$NGPU --master-port=$PORT run_clm.py \
     $model_flag $checkpoint_flag $data_flag $optim_flag $block_size_flag $tokenizer_flag \
     --per_device_train_batch_size=$BZ --per_device_eval_batch_size=$BZ --gradient_accumulation_steps=$GRAD_ACC \
@@ -152,4 +154,4 @@ WANDB_PROJECT=hf_pretrain HF_HUB_OFFLINE=1 HF_HOME=$HF_HOME CUDA_VISIBLE_DEVICES
     --warmup_ratio=0.1 $scheduler_flag --weight_decay=0.01 \
     --learning_rate=$LR $tensor_lr_flag $TND_flag $MGN_flag \
     --output_dir=/results/hf_pretrain/$RUN_NAME --save_safetensors=False $overwrite_flag $no_grouping_flag \
-    > /results/hf_pretrain/$LOG_NAME.out 2>&1 &
+    > $RESULTS_DIR/$LOG_NAME.out 2>&1 &
