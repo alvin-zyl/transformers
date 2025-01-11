@@ -153,5 +153,5 @@ WANDB_PROJECT=hf_pretrain HF_HUB_OFFLINE=1 HF_HOME=$HF_HOME CUDA_VISIBLE_DEVICES
     --logging_steps=10 --include_num_input_tokens_seen \
     --warmup_ratio=0.1 $scheduler_flag --weight_decay=0.01 \
     --learning_rate=$LR $tensor_lr_flag $TND_flag $MGN_flag \
-    --output_dir=/results/hf_pretrain/$RUN_NAME --save_safetensors=False $overwrite_flag $no_grouping_flag \
+    --output_dir=$RESULTS_DIR/$RUN_NAME --save_safetensors=False $overwrite_flag $no_grouping_flag \
     > $RESULTS_DIR/$LOG_NAME.out 2>&1 &
