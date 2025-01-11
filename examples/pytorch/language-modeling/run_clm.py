@@ -55,6 +55,7 @@ from src.transformers.utils import check_min_version, send_example_telemetry
 from src.transformers.utils.versions import require_version
 
 from tensor_transformers.hf_gpt2 import TensorGPT2Config, TensorGPT2LMHeadModel
+from tensor_transformers.hf_llama import TensorLlamaConfig, TensorLlamaForCausalLM
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -75,6 +76,10 @@ MODEL_CLASSES = {
         TensorGPT2Config,
         TensorGPT2LMHeadModel,
     ),
+    "hf_tensor_llama": (
+        TensorLlamaConfig,
+        TensorLlamaForCausalLM,
+    )
 }
 
 
