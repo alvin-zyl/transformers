@@ -134,12 +134,12 @@ else
     readonly scheduler_flag='--lr_scheduler_type=cosine_with_min_lr --lr_scheduler_kwargs={"min_lr_rate":0.1}'
 fi
 
-NO_GROUP=${NO_GROUP-"False"}
+NO_GROUP=${NO_GROUP-"True"}
 if [ "${NO_GROUP}" == "True" ]; then
     readonly no_grouping_flag="--no_grouping --ignore_padding_tokens"
-    RUN_NAME=$RUN_NAME-NO-GROUP
 else
     readonly no_grouping_flag=""
+    RUN_NAME=$RUN_NAME-GROUPED
 fi
 
 EVAL_STEPS=${EVAL_STEPS="9000"}

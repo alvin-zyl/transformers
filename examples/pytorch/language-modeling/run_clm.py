@@ -32,7 +32,7 @@ from typing import Optional
 import datasets
 import evaluate
 import torch
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 
 sys.path.append("/workspace/transformers")
 from src import transformers
@@ -395,10 +395,7 @@ def main():
     if data_args.dataset_name is not None:
         # Downloading and loading a dataset from the hub.
         if data_args.offline_mode:
-            raw_datasets = load_dataset(
-                data_args.dataset_name,
-                streaming=data_args.streaming,
-            )
+            tokenized_datasets = load_from_disk(data_args.dataset_name)
             assert "validation" in raw_datasets.keys()
             assert "train" in raw_datasets.keys()
         else:
@@ -632,21 +629,22 @@ def main():
         return output
 
     with training_args.main_process_first(desc="dataset map tokenization"):
-        if not data_args.streaming:
-            tokenized_datasets = raw_datasets.map(
-                tokenize_function,
-                batched=True,
-                num_proc=data_args.preprocessing_num_workers,
-                remove_columns=column_names,
-                load_from_cache_file=not data_args.overwrite_cache,
-                desc="Running tokenizer on dataset",
-            )
-        else:
-            tokenized_datasets = raw_datasets.map(
-                tokenize_function,
-                batched=True,
-                remove_columns=column_names,
-            )
+        if not data_args.offline_mode:
+            if not data_args.streaming:
+                tokenized_datasets = raw_datasets.map(
+                    tokenize_function,
+                    batched=True,
+                    num_proc=data_args.preprocessing_num_workers,
+                    remove_columns=column_names,
+                    load_from_cache_file=not data_args.overwrite_cache,
+                    desc="Running tokenizer on dataset",
+                )
+            else:
+                tokenized_datasets = raw_datasets.map(
+                    tokenize_function,
+                    batched=True,
+                    remove_columns=column_names,
+                )
 
     # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
     def group_texts(examples):

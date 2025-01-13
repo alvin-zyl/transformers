@@ -60,8 +60,8 @@ if [ "${TAG}" != "none" ]; then
 fi
 
 HF_HOME="/datasets/.cache/huggingface"
-DATA=${DATA-"$HF_HOME/datasets/c4/raw"}
-readonly data_flag="--dataset_name=$DATA --streaming --offline_mode"
+DATA=${DATA-"$/datasets/c4/tokenized"}
+readonly data_flag="--dataset_name=$DATA --offline_mode"
 
 LR=${LR-"2e-4"}
 RUN_NAME=$RUN_NAME-LR-$LR
@@ -112,7 +112,7 @@ if [ "${OVERWRITE}" == "True" ]; then
 else
     readonly overwrite_flag=""
 fi
-MAX_STEP=${MAX_STEP-"18000"}
+MAX_STEP=${MAX_STEP-"22000"}
 
 OPTIM=${OPTIM-"none"}
 if [ "${OPTIM}" != "none" ]; then
@@ -139,9 +139,10 @@ if [ "${NO_GROUP}" == "True" ]; then
     readonly no_grouping_flag="--no_grouping --ignore_padding_tokens"
 else
     readonly no_grouping_flag=""
+    RUN_NAME=$RUN_NAME-GROUPED
 fi
 
-EVAL_STEPS=${EVAL_STEPS="9000"}
+EVAL_STEPS=${EVAL_STEPS="11000"}
 SAVE_STEPS=${SAVE_STEPS-$EVAL_STEPS}
 
 if [ "${CONTINUE}" != "none" ]; then
@@ -150,7 +151,7 @@ else
     LOG_NAME=$RUN_NAME
 fi
 
-WANDB_PROJECT=hf_pretrain HF_HUB_OFFLINE=1 HF_HOME=$HF_HOME torchrun --nproc-per-node=$4 --master-port=$PORT run_clm.py \
+shifter WANDB_PROJECT=hf_pretrain HF_HUB_OFFLINE=1 HF_HOME=$HF_HOME torchrun --nproc-per-node=$4 --master-port=$PORT run_clm.py \
     $model_flag $checkpoint_flag $data_flag $optim_flag $block_size_flag $tokenizer_flag \
     --per_device_train_batch_size=$BZ --per_device_eval_batch_size=$BZ --gradient_accumulation_steps=$GRAD_ACC \
     $train_flag $eval_flag $p_flag \
