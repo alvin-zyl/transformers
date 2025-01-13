@@ -150,7 +150,7 @@ fi
 
 RESULTS_DIR=${RESULTS_DIR-"/results/hf_pretrain"}
 
-shifter WANDB_PROJECT=hf_pretrain HF_HUB_OFFLINE=1 HF_HOME=$HF_HOME python3 tokenization.py \
+srun shifter python3 tokenization.py \
     $model_flag $checkpoint_flag $data_flag $optim_flag $block_size_flag $tokenizer_flag \
     --per_device_train_batch_size=$BZ --per_device_eval_batch_size=$BZ --gradient_accumulation_steps=$GRAD_ACC \
     $train_flag $eval_flag $p_flag \
@@ -158,5 +158,4 @@ shifter WANDB_PROJECT=hf_pretrain HF_HUB_OFFLINE=1 HF_HOME=$HF_HOME python3 toke
     --logging_steps=10 --include_num_input_tokens_seen \
     --warmup_ratio=0.1 $scheduler_flag --weight_decay=0.01 \
     --learning_rate=$LR $tensor_lr_flag $TND_flag $MGN_flag \
-    --output_dir=$RESULTS_DIR/$RUN_NAME --save_safetensors=False $overwrite_flag $no_grouping_flag \
-    > $RESULTS_DIR/$LOG_NAME.out 2>&1 &
+    --output_dir=$RESULTS_DIR/$RUN_NAME --save_safetensors=False $overwrite_flag $no_grouping_flag --preprocessing_num_workers=64

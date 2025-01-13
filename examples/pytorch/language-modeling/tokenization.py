@@ -311,6 +311,11 @@ def main():
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
+    torch.set_num_threads(1)
+    os.environ["WANDB_PROJECT"] = "hf_pretrain"
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["HF_HOME"] = "/datasets/.cache/huggingface"
+
     parser = HfArgumentParser(
         (
             ModelArguments,
