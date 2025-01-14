@@ -134,6 +134,12 @@ else
     readonly scheduler_flag='--lr_scheduler_type=cosine_with_min_lr --lr_scheduler_kwargs={"min_lr_rate":0.1}'
 fi
 
+WPR=${WPR-"0.1"}
+if [ "${WPR}" != "0.1" ]; then
+    RUN_NAME=$RUN_NAME-WPR-$WPR
+fi
+readonly warmup_ratio_flag="--warmup_ratio=$WPR"
+
 NO_GROUP=${NO_GROUP-"True"}
 if [ "${NO_GROUP}" == "True" ]; then
     readonly no_grouping_flag="--no_grouping --ignore_padding_tokens"
@@ -157,7 +163,7 @@ WANDB_PROJECT=hf_pretrain CUDA_VISIBLE_DEVICES=$DEVICE torchrun --nproc-per-node
     $train_flag $eval_flag $p_flag \
     --eval_strategy=steps --eval_steps=$EVAL_STEPS --save_strategy=steps --save_steps=$SAVE_STEPS --max_steps=$MAX_STEP \
     --logging_steps=10 --include_num_input_tokens_seen \
-    --warmup_ratio=0.1 $scheduler_flag --weight_decay=0.01 \
+    $warmup_ratio_flag $scheduler_flag --weight_decay=0.01 \
     --learning_rate=$LR $tensor_lr_flag $TND_flag $MGN_flag \
     --output_dir=/results/hf_pretrain/$RUN_NAME --save_safetensors=False $overwrite_flag $no_grouping_flag \
     > /results/hf_pretrain/$LOG_NAME.out 2>&1 &
