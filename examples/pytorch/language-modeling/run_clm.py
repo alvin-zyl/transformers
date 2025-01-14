@@ -395,7 +395,7 @@ def main():
     if data_args.dataset_name is not None:
         # Downloading and loading a dataset from the hub.
         if data_args.offline_mode:
-            tokenized_datasets = load_from_disk(data_args.dataset_name)
+            raw_datasets = load_from_disk(data_args.dataset_name)
             assert "validation" in raw_datasets.keys()
             assert "train" in raw_datasets.keys()
         else:
@@ -645,6 +645,8 @@ def main():
                     batched=True,
                     remove_columns=column_names,
                 )
+        else:
+            tokenized_datasets = raw_datasets
 
     # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
     def group_texts(examples):

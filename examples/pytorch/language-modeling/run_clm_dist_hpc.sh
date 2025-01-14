@@ -7,6 +7,7 @@
 #SBATCH --image=alvinliu12138/zhanggroup:dev_hf
 #SBATCH --gpus-per-node=4
 #SBATCH --ntasks-per-node=4
+#SBATCH --volume="/global/cfs/cdirs/m4645/alvinliu/repo:/workspace;/global/cfs/cdirs/m4645/alvinliu/workspace/datasets:/datasets;/global/cfs/cdirs/m4645/alvinliu/workspace/results:/results"
 
 PORT=$(($RANDOM + 10000))
 
@@ -60,7 +61,7 @@ if [ "${TAG}" != "none" ]; then
 fi
 
 HF_HOME="/datasets/.cache/huggingface"
-DATA=${DATA-"$/datasets/c4/tokenized"}
+DATA=${DATA-"/datasets/c4/tokenized"}
 readonly data_flag="--dataset_name=$DATA --offline_mode"
 
 LR=${LR-"2e-4"}
@@ -151,7 +152,7 @@ else
     LOG_NAME=$RUN_NAME
 fi
 
-shifter WANDB_PROJECT=hf_pretrain HF_HUB_OFFLINE=1 HF_HOME=$HF_HOME torchrun --nproc-per-node=$4 --master-port=$PORT run_clm.py \
+WANDB_PROJECT=hf_pretrain HF_HUB_OFFLINE=1 HF_HOME=$HF_HOME shifter torchrun --nproc-per-node=4 --master-port=$PORT run_clm.py \
     $model_flag $checkpoint_flag $data_flag $optim_flag $block_size_flag $tokenizer_flag \
     --per_device_train_batch_size=$BZ --per_device_eval_batch_size=$BZ --gradient_accumulation_steps=$GRAD_ACC \
     $train_flag $eval_flag $p_flag \
@@ -159,5 +160,4 @@ shifter WANDB_PROJECT=hf_pretrain HF_HUB_OFFLINE=1 HF_HOME=$HF_HOME torchrun --n
     --logging_steps=10 --include_num_input_tokens_seen \
     --warmup_ratio=0.1 $scheduler_flag --weight_decay=0.01 \
     --learning_rate=$LR $tensor_lr_flag $TND_flag $MGN_flag \
-    --output_dir=/results/hf_pretrain/$RUN_NAME --save_safetensors=False $overwrite_flag $no_grouping_flag \
-    > /results/hf_pretrain/$LOG_NAME.out 2>&1 &
+    --output_dir=/results/hf_pretrain/$RUN_NAME --save_safetensors=False $overwrite_flag $no_grouping_flag
