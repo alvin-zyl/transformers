@@ -37,11 +37,14 @@ if [ "${TRAIN}" == "True" ]; then
 else
     readonly train_flag=""
 fi
-EVAL=${EVAL-$TRAIN}
+
+SAVE_STEPS=${SAVE_STEPS-"11000"}
+EVAL=${EVAL-"False"}
 if [ "${EVAL}" == "True" ]; then
-    readonly eval_flag="--do_eval"
+    EVAL_STEPS=${EVAL_STEPS-$SAVE_STEPS}
+    readonly eval_flag="--do_eval --eval_strategy=steps --eval_steps=$EVAL_STEPS"
 else
-    readonly eval_flag=""
+    readonly eval_flag="--do_eval=False"
 fi
 
 TAG=${TAG-"none"}
@@ -132,20 +135,17 @@ else
     RUN_NAME=$RUN_NAME-GROUPED
 fi
 
-EVAL_STEPS=${EVAL_STEPS="11000"}
-SAVE_STEPS=${SAVE_STEPS-$EVAL_STEPS}
-
 if [ "${CONTINUE}" != "none" ]; then
     LOG_NAME=$RUN_NAME-${CONTINUE##*/}
 else
     LOG_NAME=$RUN_NAME
 fi
 
-WANDB_PROJECT=hf_pretrain HF_HUB_OFFLINE=1 HF_HOME=$HF_HOME torchrun --nproc-per-node=4 --master-port=$PORT run_clm.py \
+WANDB_PROJECT=hf_pretrain HF_HUB_OFFLINE=1 HF_HOME=$HF_HOME srun -u shifter torchrun --nproc-per-node=4 --master-port=$PORT run_clm.py \
     $model_flag $checkpoint_flag $data_flag $optim_flag $block_size_flag $tokenizer_flag \
     --per_device_train_batch_size=$BZ --per_device_eval_batch_size=$BZ --gradient_accumulation_steps=$GRAD_ACC \
     $train_flag $eval_flag $p_flag \
-    --eval_strategy=steps --eval_steps=$EVAL_STEPS --save_strategy=steps --save_steps=$SAVE_STEPS --max_steps=$MAX_STEP \
+    --save_strategy=steps --save_steps=$SAVE_STEPS --max_steps=$MAX_STEP \
     --logging_steps=10 --include_num_input_tokens_seen \
     --warmup_ratio=0.1 $scheduler_flag --weight_decay=0.01 \
     --learning_rate=$LR $tensor_lr_flag $TND_flag $MGN_flag \
