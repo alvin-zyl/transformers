@@ -724,13 +724,51 @@ def main():
             return metric.compute(predictions=preds, references=labels)
 
     # Initialize our Trainer
+    if extra_training_args.tensor_lr is not None or extra_training_args.tensor_no_decay:
+        param_optimizer = list(model.named_parameters())
+        no_decay = ["bias", "gamma", "beta", "LayerNorm"]
+        tensor_param = ["tensor"]
+
+        optimizer_grouped_parameters = [
+            {
+                "params": [
+                    p
+                    for n, p in param_optimizer
+                    if not any(nd in n for nd in no_decay + tensor_param)
+                ],
+                "weight_decay": 0.01,
+                "lr": training_args.learning_rate,
+            },
+            {
+                "params": [
+                    p for n, p in param_optimizer if any(nd in n for nd in tensor_param)
+                ],
+                "weight_decay": (
+                    0.01 if not extra_training_args.tensor_no_decay else 0.0
+                ),
+                "lr": extra_training_args.tensor_lr,
+            },
+            {
+                "params": [
+                    p for n, p in param_optimizer if any(nd in n for nd in no_decay)
+                ],
+                "weight_decay": 0.0,
+                "lr": training_args.learning_rate,
+            },
+        ]
+        optimizer_cls, scheduler_cls = Trainer.get_optimizer_cls_and_kwargs(
+            training_args, model
+        )
+        optimizer = optimizer_cls(optimizer_grouped_parameters)
+    else:
+        optimizer = None
+
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
         eval_dataset=eval_dataset if training_args.do_eval else None,
         processing_class=tokenizer,
-        # Data collator will default to DataCollatorWithPadding, so we change it.
         data_collator=default_data_collator,
         compute_metrics=(
             compute_metrics
@@ -742,6 +780,7 @@ def main():
             if training_args.do_eval and not is_torch_xla_available()
             else None
         ),
+        optimizers=(optimizer, None),
     )
 
     # Training
